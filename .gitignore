@@ -1,0 +1,9 @@
+# Banco de dados local (não enviar para o GitHub)
+empresas.db
+
+# Arquivos de cache do Python
+__pycache__/
+*.pyc
+
+# Arquivos do macOS
+.DS_Store
