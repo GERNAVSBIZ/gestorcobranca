@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Faturamento Aeroportuário</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>✈️ Gestão de Cobrança - DNIZ</h1>
+            <nav>
+                <button onclick="showTab('fatura')" class="active">Gerar Fatura</button>
+                <button onclick="showTab('cadastro')">Cadastro de Empresas</button>
+            </nav>
+        </header>
+
+        <section id="fatura" class="tab-content active">
+            <div class="card">
+                <h3>1. Selecione a Empresa</h3>
+                <select id="selectEmpresa" onchange="preencherEmpresa()">
+                    <option value="">-- Selecione --</option>
+                </select>
+            </div>
+
+            <form id="formFatura" onsubmit="gerarPDF(event)">
+                <div class="grid-2">
+                    <div>
+                        <div class="card">
+                            <h3>Aeronave Principal (Pagante)</h3>
+                            <label>Aeronave (Prefixo):</label>
+                            <input type="text" id="f_aeronave" required placeholder="PT-XXX">
+                            
+                            <label>Data do Voo:</label>
+                            <input type="date" id="f_data" required>
+                            
+                            <div class="row">
+                                <div><label>Início:</label><input type="time" id="f_inicio" required></div>
+                                <div><label>Fim:</label><input type="time" id="f_fim" required></div>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <h3>Dados da Empresa</h3>
+                            <label>Razão Social:</label>
+                            <input type="text" id="f_razao" required>
+                            <label>CNPJ:</label>
+                            <input type="text" id="f_cnpj" required>
+                            
+                            <label>Email Financeiro:</label>
+                            <input type="email" id="f_email_financeiro" placeholder="email@empresa.com">
+                            <label>Endereço:</label>
+                            <input type="text" id="f_endereco" placeholder="Endereço">
+							<label>Telefone:</label>
+                            <input type="text" id="f_telefone" placeholder="Telefone">
+                        </div>
+                        
+                        <div class="card">
+                            <h3>Observações do Voo</h3>
+                            <textarea id="f_observacoes" rows="3" style="width:100%;" placeholder="Ex: Atraso meteorológico..."></textarea>
+                        </div>
+                    </div>
+
+                    <div>
+                        <div class="card">
+                            <h3>Dados Operacionais</h3>
+                            <label>Solicitante:</label>
+                            <input type="text" id="f_solicitante" required>
+                            <label>Email:</label>
+                            <input type="email" id="f_email_solicitante">
+                            <label>Piloto:</label>
+                            <input type="text" id="f_piloto">
+                        </div>
+
+                        <div class="card">
+                            <h3>Anexo do Email</h3>
+                            <input type="file" id="f_anexo" accept="application/pdf">
+                        </div>
+
+                        <div class="card" style="background-color: #fff8e1; border-color: #ffe082;">
+                            <h3>🛩️ Aeronaves Concorrentes (Rateio)</h3>
+                            <table id="tbConcorrentes" style="width: 100%; font-size: 13px; margin-bottom: 10px;">
+                                <thead>
+                                    <tr style="text-align: left;">
+                                        <th>Matrícula</th>
+                                        <th>Início</th>
+                                        <th>Fim</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                            <button type="button" onclick="addConcorrente()" style="padding: 5px 10px; font-size: 12px;">+ Adicionar Aeronave</button>
+                        </div>
+                    </div>
+                </div>
+                <br>
+                <button type="submit" class="btn-primary">📄 Calcular e Gerar PDF</button>
+            </form>
+        </section>
+
+        <section id="cadastro" class="tab-content">
+            <div class="card">
+                <h3>Nova Empresa</h3>
+                <div class="row">
+                    <input type="text" id="c_cnpj" placeholder="CNPJ">
+                    <button type="button" onclick="consultarReceita()" class="btn-success" 
+                            style="width: auto; 
+                                   margin-bottom: 15px; 
+                                   padding-top: 10px; 
+                                   padding-bottom: 10px; 
+                                   font-size: 14px;">
+                        🔍 Buscar
+                    </button>
+                </div>
+                <input type="text" id="c_razao" placeholder="Razão Social">
+                <input type="text" id="c_endereco" placeholder="Endereço">
+                <input type="text" id="c_telefone" placeholder="Telefone">
+                <input type="email" id="c_email_financeiro" placeholder="Email Financeiro (Busca Auto.)">
+                <hr>
+                <div class="grid-2">
+                    <div><input type="text" id="c_solicitante" placeholder="Solicitante Padrão"><input type="text" id="c_email_solicitante" placeholder="Email Solicitante"></div>
+                    <div><input type="text" id="c_piloto" placeholder="Piloto Padrão"></div>
+                </div>
+                <button onclick="salvarEmpresa()" class="btn-success" style="width: 100%;">💾 Salvar Empresa</button>
+            </div>
+            <div class="card">
+                <h3>Cadastradas</h3>
+                <ul id="listaEmpresas"></ul>
+            </div>
+        </section>
+    </div>
+    <script src="/static/script.js"></script>
+</body>
+</html>
