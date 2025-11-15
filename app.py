@@ -14,7 +14,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import inch
 
 app = Flask(__name__)
-# ATENÇÃO: Caminho alterado para funcionar no disco persistente do Render
+# Caminho do banco de dados para o Render
 DB_NAME = "/data/empresas.db" 
 
 # --- CONFIGURAÇÕES ---
@@ -25,7 +25,14 @@ PRECO_BLOCO_30MIN = VALOR_HORA_CHEIA / 2
 
 # --- BANCO DE DADOS ---
 def init_db():
-    conn = sqlite3.connect(DB_NAME)
+    # Verifica se o diretório /data existe (para rodar no Render)
+    if os.path.exists("/data"):
+        db_path = "/data/empresas.db"
+    else:
+        # Se não, usa um arquivo local (para você testar no seu PC)
+        db_path = "empresas.db"
+        
+    conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS empresas (
@@ -216,12 +223,191 @@ def index():
 
 @app.route('/api/empresas', methods=['GET', 'POST'])
 def gerenciar_empresas():
-    conn = sqlite3.connect(DB_NAME)
+    # Caminho do banco (local ou servidor)
+    db_path = "/data/empresas.db" if os.path.exists("/data") else "empresas.db"
+    conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
+    
     if request.method == 'POST':
         data = request.json
         try:
+            # Esta é a seção (Linha ~227) que o Render indicou como quebrada.
+            # Esta versão está sintaticamente correta.
             cursor.execute('''
                 INSERT INTO empresas (razao_social, cnpj, endereco, telefone, email_financeiro, solicitante_padrao, email_solicitante_padrao, piloto_padrao) 
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (data.get('razao'), data.get('cnpj'), data.get('endereco'), data.get('telefone'), data.get('
+            ''', (
+                data.get('razao'), 
+                data.get('cnpj'), 
+                data.get('endereco'), 
+                data.get('telefone'), 
+                data.get('email_financeiro'), 
+                data.get('solicitante'), 
+                data.get('email_solicitante'), 
+                data.get('piloto')
+            ))
+            conn.commit()
+            return jsonify({"msg": "Salvo!"}), 201
+        except Exception as e:
+            return jsonify({"msg": str(e)}), 400
+        finally:
+            conn.close()
+    else:
+        cursor.execute('SELECT * FROM empresas')
+        rows = cursor.fetchall()
+        # Corrigido "email_colicitante" para "email_solicitante_padrao"
+        empresas = [{"id":r[0], "razao":r[1], "cnpj":r[2], "endereco":r[3], "telefone":r[4], "email_financeiro":r[5], "solicitante":r[6], "email_solicitante_padrao":r[7], "piloto":r[8]} for r in rows]
+        conn.close()
+        return jsonify(empresas)
+
+@app.route('/api/gerar_pdf', methods=['POST'])
+def gerar_pdf():
+    dados = request.form
+    arquivo_anexo_email = request.files.get('anexo')
+    lista_concorrentes = json.loads(dados.get('concorrentes_json', '[]'))
+    observacoes = dados.get('observacoes', '')
+    
+    # Pega os dados da empresa do formulário
+    email_financeiro = dados.get('empresa_email', '') 
+    telefone_cobranca = dados.get('empresa_telefone', '') # O mesmo número
+    
+    # 1. Cálculo
+    resultado = calcular_timeline(dados['inicio'], dados['fim'], lista_concorrentes)
+    
+    # 2. Overlay PDF
+    packet = io.BytesIO()
+    can = canvas.Canvas(packet, pagesize=A4)
+    can.setFont("Helvetica", 10)
+    
+    # DNB
+    can.drawString(110, 700, "IMPERATRIZ-MA") 
+
+    # Coordenadas Pessoais (Solicitante, Piloto)
+    can.drawString(150, 645, dados['solicitante'])
+    can.drawString(150, 624, dados['email_solicitante'])
+    can.drawString(150, 602, dados['piloto'])
+    
+    # Telefone Solicitante
+    can.drawString(400, 622, telefone_cobranca)
+    
+    # Coordenadas Faturamento (Empresa)
+    can.drawString(150, 530, dados['empresa_razao'])
+    can.drawString(150, 510, dados['empresa_cnpj'])
+    
+    # Endereço (com quebra de linha)
+    endereco_texto = dados.get('empresa_endereco', '')
+    styles = getSampleStyleSheet()
+    styleN = styles['Normal']
+    styleN.fontName = "Helvetica"
+    styleN.fontSize = 10
+    styleN.leading = 12 
+    p_endereco = Paragraph(endereco_texto, styleN)
+    caixa_largura = 400 
+    caixa_altura = 42
+    w, h = p_endereco.wrap(caixa_largura, caixa_altura)
+    y_desenho = 486 - h
+    p_endereco.drawOn(can, 150, y_desenho)
+
+    # Email (Abaixo do Endereço)
+    can.drawString(250, 424, email_financeiro) 
+    
+    # Telefone Cobrança (Abaixo do Email)
+    can.drawString(100, 444, telefone_cobranca) 
+    
+    y_tab = 300 
+    
+    # Escreve Aeronave Principal
+    can.setFont("Helvetica", 10)
+    can.drawString(80, y_tab, dados['aeronave']) 
+    
+    # Lógica Concorrentes e Horário de Rateio
+    if len(lista_concorrentes) > 0:
+        matriculas = [c['matricula'] for c in lista_concorrentes]
+        
+        if len(lista_concorrentes) <= 5:
+            texto_extra = f"{', '.join(matriculas)}"
+            gera_anexo_tabela = True 
+        else:
+            texto_extra = f"+ {len(lista_concorrentes)} aeronaves (Ver Anexo)"
+            gera_anexo_tabela = True
+
+        can.setFont("Helvetica", 8)
+        can.drawString(110, y_tab - 74, texto_extra) 
+        
+        texto_horario_rateio = calcular_interseccao_visual(dados['inicio'], dados['fim'], lista_concorrentes)
+        
+        if texto_horario_rateio:
+            can.drawString(320, y_tab - 74, f" {texto_horario_rateio}")
+        
+        can.setFont("Helvetica", 10)
+    else:
+        gera_anexo_tabela = False
+
+    # Obs
+    if observacoes:
+        can.setFont("Helvetica", 9)
+        can.drawString(80, y_tab - 95, f"Obs: {observacoes}")
+        can.setFont("Helvetica", 10)
+
+    # Dados da Principal
+    can.drawString(140, y_tab, dados['data'])
+    can.drawString(220, y_tab, dados['inicio'])
+    can.drawString(290, y_tab, dados['fim'])
+    
+    # Minutos Cobrados
+    can.drawString(350, y_tab, f"{resultado['minutos_cobrados']} min")
+    
+    can.drawString(420, y_tab, f"R$ {VALOR_HORA_CHEIA:.2f}")
+    can.drawString(490, y_tab, f"R$ {resultado['valor_final']:.2f}")
+    
+    # Checkbox
+    if len(lista_concorrentes) > 0:
+        can.drawString(182, 272, "X") # Sim
+    else:
+        can.drawString(250, 268, "X") # Não
+
+    # Assinatura
+    if os.path.exists(ARQUIVO_ASSINATURA):
+        can.drawImage(ARQUIVO_ASSINATURA, 350, 100, width=100, height=30, mask='auto')
+
+    can.save()
+    packet.seek(0)
+    
+    # 3. Montagem Final
+    output_writer = PdfWriter()
+    
+    # Pág 1
+    if os.path.exists(PDF_MODELO):
+        overlay_pdf = PdfReader(packet)
+        modelo_pdf = PdfReader(open(PDF_MODELO, "rb"))
+        pagina_1 = modelo_pdf.pages[0]
+        pagina_1.merge_page(overlay_pdf.pages[0])
+        output_writer.add_page(pagina_1)
+    
+    # Pág 2
+    if gera_anexo_tabela:
+        pdf_tabela = gerar_pagina_anexo(dados, lista_concorrentes, resultado)
+        reader_tabela = PdfReader(pdf_tabela)
+        output_writer.add_page(reader_tabela.pages[0])
+        
+    # Pág 3
+    if arquivo_anexo_email:
+        anexo_reader = PdfReader(arquivo_anexo_email)
+        output_writer.append_pages_from_reader(anexo_reader)
+    
+    pdf_output = io.BytesIO()
+    output_writer.write(pdf_output)
+    pdf_output.seek(0)
+    
+    filename = f"Fatura_{dados['aeronave']}.pdf"
+    return send_file(pdf_output, as_attachment=True, download_name=filename, mimetype='application/pdf')
+
+if __name__ == '__main__':
+    # Verifica o ambiente antes de iniciar o DB
+    if not os.path.exists("/data"):
+        print("Aviso: Diretório /data não encontrado. Rodando em modo local.")
+    init_db()
+    
+    # Define a porta para o Render (ou 5000 para local)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(debug=False, host='0.0.0.0', port=port)
