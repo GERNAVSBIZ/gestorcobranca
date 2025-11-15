@@ -14,8 +14,6 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import inch
 
 app = Flask(__name__)
-# Caminho do banco de dados para o Render
-DB_NAME = "/data/empresas.db" 
 
 # --- CONFIGURAÇÕES ---
 PDF_MODELO = "Formulário_Modelo.pdf" 
@@ -24,14 +22,17 @@ VALOR_HORA_CHEIA = 759.86
 PRECO_BLOCO_30MIN = VALOR_HORA_CHEIA / 2
 
 # --- BANCO DE DADOS ---
-def init_db():
-    # Verifica se o diretório /data existe (para rodar no Render)
+# Função auxiliar para pegar o caminho correto do DB
+def get_db_path():
+    # Se o app estiver rodando no Render, ele usa o Disco Persistente
     if os.path.exists("/data"):
-        db_path = "/data/empresas.db"
+        return "/data/empresas.db"
     else:
-        # Se não, usa um arquivo local (para você testar no seu PC)
-        db_path = "empresas.db"
-        
+        # Senão, usa um arquivo local (para testes no seu PC)
+        return "empresas.db"
+
+def init_db():
+    db_path = get_db_path()
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     cursor.execute('''
@@ -223,16 +224,13 @@ def index():
 
 @app.route('/api/empresas', methods=['GET', 'POST'])
 def gerenciar_empresas():
-    # Caminho do banco (local ou servidor)
-    db_path = "/data/empresas.db" if os.path.exists("/data") else "empresas.db"
+    db_path = get_db_path() # Pega o caminho correto (local ou servidor)
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
     if request.method == 'POST':
         data = request.json
         try:
-            # Esta é a seção (Linha ~227) que o Render indicou como quebrada.
-            # Esta versão está sintaticamente correta.
             cursor.execute('''
                 INSERT INTO empresas (razao_social, cnpj, endereco, telefone, email_financeiro, solicitante_padrao, email_solicitante_padrao, piloto_padrao) 
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -255,7 +253,6 @@ def gerenciar_empresas():
     else:
         cursor.execute('SELECT * FROM empresas')
         rows = cursor.fetchall()
-        # Corrigido "email_colicitante" para "email_solicitante_padrao"
         empresas = [{"id":r[0], "razao":r[1], "cnpj":r[2], "endereco":r[3], "telefone":r[4], "email_financeiro":r[5], "solicitante":r[6], "email_solicitante_padrao":r[7], "piloto":r[8]} for r in rows]
         conn.close()
         return jsonify(empresas)
@@ -267,9 +264,8 @@ def gerar_pdf():
     lista_concorrentes = json.loads(dados.get('concorrentes_json', '[]'))
     observacoes = dados.get('observacoes', '')
     
-    # Pega os dados da empresa do formulário
     email_financeiro = dados.get('empresa_email', '') 
-    telefone_cobranca = dados.get('empresa_telefone', '') # O mesmo número
+    telefone_cobranca = dados.get('empresa_telefone', '')
     
     # 1. Cálculo
     resultado = calcular_timeline(dados['inicio'], dados['fim'], lista_concorrentes)
@@ -282,7 +278,7 @@ def gerar_pdf():
     # DNB
     can.drawString(110, 700, "IMPERATRIZ-MA") 
 
-    # Coordenadas Pessoais (Solicitante, Piloto)
+    # Coordenadas Pessoais
     can.drawString(150, 645, dados['solicitante'])
     can.drawString(150, 624, dados['email_solicitante'])
     can.drawString(150, 602, dados['piloto'])
@@ -290,7 +286,7 @@ def gerar_pdf():
     # Telefone Solicitante
     can.drawString(400, 622, telefone_cobranca)
     
-    # Coordenadas Faturamento (Empresa)
+    # Coordenadas Faturamento
     can.drawString(150, 530, dados['empresa_razao'])
     can.drawString(150, 510, dados['empresa_cnpj'])
     
@@ -308,19 +304,19 @@ def gerar_pdf():
     y_desenho = 486 - h
     p_endereco.drawOn(can, 150, y_desenho)
 
-    # Email (Abaixo do Endereço)
+    # Email
     can.drawString(250, 424, email_financeiro) 
     
-    # Telefone Cobrança (Abaixo do Email)
+    # Telefone Cobrança
     can.drawString(100, 444, telefone_cobranca) 
     
     y_tab = 300 
     
-    # Escreve Aeronave Principal
+    # Aeronave Principal
     can.setFont("Helvetica", 10)
     can.drawString(80, y_tab, dados['aeronave']) 
     
-    # Lógica Concorrentes e Horário de Rateio
+    # Lógica Concorrentes
     if len(lista_concorrentes) > 0:
         matriculas = [c['matricula'] for c in lista_concorrentes]
         
@@ -402,12 +398,16 @@ def gerar_pdf():
     filename = f"Fatura_{dados['aeronave']}.pdf"
     return send_file(pdf_output, as_attachment=True, download_name=filename, mimetype='application/pdf')
 
+# --- INICIALIZAÇÃO DO APP ---
+# CHAMA O init_db() no escopo global
+# Isso garante que a tabela seja criada quando o Gunicorn iniciar
+init_db()
+
 if __name__ == '__main__':
-    # Verifica o ambiente antes de iniciar o DB
-    if not os.path.exists("/data"):
-        print("Aviso: Diretório /data não encontrado. Rodando em modo local.")
+    # Este bloco SÓ roda no seu PC
+    print("Rodando em modo de desenvolvimento local...")
+    # Garante que o DB local seja criado
     init_db()
     
-    # Define a porta para o Render (ou 5000 para local)
     port = int(os.environ.get("PORT", 5000))
-    app.run(debug=False, host='0.0.0.0', port=port)
+    app.run(debug=True, host='0.0.0.0', port=port)
