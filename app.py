@@ -21,8 +21,7 @@ ARQUIVO_ASSINATURA = "assinatura.png"
 VALOR_HORA_CHEIA = 759.86
 PRECO_BLOCO_30MIN = VALOR_HORA_CHEIA / 2
 
-# --- BANCO DE DADOS ---
-# Função auxiliar para pegar o caminho correto do DB
+# --- BANCO DE DADOS (LÓGICA CORRIGIDA PARA DEPLOY) ---
 def get_db_path():
     # Se o app estiver rodando no Render, ele usa o Disco Persistente
     if os.path.exists("/data"):
@@ -224,7 +223,7 @@ def index():
 
 @app.route('/api/empresas', methods=['GET', 'POST'])
 def gerenciar_empresas():
-    db_path = get_db_path() # Pega o caminho correto (local ou servidor)
+    db_path = get_db_path() # Pega o caminho correto
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
@@ -400,7 +399,7 @@ def gerar_pdf():
 
 # --- INICIALIZAÇÃO DO APP ---
 # CHAMA O init_db() no escopo global
-# Isso garante que a tabela seja criada quando o Gunicorn iniciar
+# Isso garante que a tabela seja criada UMA VEZ quando o Gunicorn iniciar
 init_db()
 
 if __name__ == '__main__':
@@ -410,4 +409,5 @@ if __name__ == '__main__':
     init_db()
     
     port = int(os.environ.get("PORT", 5000))
+    # debug=True é melhor para desenvolvimento local
     app.run(debug=True, host='0.0.0.0', port=port)
